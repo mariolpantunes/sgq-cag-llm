@@ -1,0 +1,9 @@
+services:
+  sgq-cag-llm:
+    container_name: sgq-cag-llm
+    build: ./src
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Lisbon
+    volumes:
+      - /tmp:/tmp
