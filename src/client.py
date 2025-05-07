@@ -31,7 +31,7 @@ def main(args):
 
     if response.ok:
         data = response.json()
-        print(json.dumps(data, indent=4))  
+        logger.debug(json.dumps(data, indent=4))  
 
     logger.info(f'Plot the sentiment analysis')
     colors = ['lightcoral', 'lightskyblue', 'lightgreen']  # One color for each bar
@@ -58,7 +58,7 @@ respostas dos alunos à disciplina de {args.c}, com base numa análise de conte�
     pdf = MarkdownPdf(toc_level=0, optimize=True)
     pdf.add_section(Section(texto_pdf))
     pdf.save("report.pdf")
-    print(texto_pdf)
+    logger.info(texto_pdf)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SGQ-CAG-LLM client')

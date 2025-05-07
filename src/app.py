@@ -145,8 +145,6 @@ Não adiciones mais nenhum texto para além do apresentado acima'''
     for k in sentiment:
         sentiment[k] /= total
 
-    
-
     # Remove temp folders
     logger.info('Remove temp folders')
     shutil.rmtree(ptxt)
