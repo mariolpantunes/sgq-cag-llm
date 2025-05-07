@@ -5,5 +5,7 @@ services:
     restart: unless-stopped
     environment:
       - TZ=Europe/Lisbon
-    volumes:
-      - /tmp:/tmp
+    ports:
+      - "80:8000"
+    tmpfs:
+      - /tmp:size=1g

@@ -64,60 +64,75 @@ async def root():
 async def report(data: Data):
     logger.info(f'Generate Report for {data.course} {data.year}')
     # Setup necessary folders
-    logger.info(f'Setup necessary folders')
+    logger.info('Setup necessary folders')
     ptxt = pathlib.Path('/tmp/text')
     ptxt.mkdir(parents=True, exist_ok=True)
     
     # Setup the documents to index
-    logger.info(f'Setup the documents to index')
+    logger.info('Setup the documents to index')
     course = data.course.lower().replace(' ', '_')
     for i in range(len(data.observations)):
         filepath = ptxt / f'{course}_{data.year}_{i}'
         with filepath.open('w', encoding ='utf-8') as f:
             f.write(f'Disciplina: {data.course}\n')
             f.write(f'Ano: {data.year}\n')
-            f.write(f'Observações:\n')
+            f.write('Observações:\n')
             f.write(f'{data.observations[i]}')
 
     # Create the Vector Store
-    logger.info(f'Create the Vector Store')
+    logger.info('Create the Vector Store')
     documents = SimpleDirectoryReader(ptxt).load_data()
     index = VectorStoreIndex.from_documents(documents)
     
     # Query the LLM to build the report
-    logger.info(f'Query the LLM to build the report')
+    logger.info('Query the LLM to build the report')
     retriever = VectorIndexRetriever(index=index, similarity_top_k=len(data.observations))
     response_synthesizer = get_response_synthesizer(response_mode='compact')
     query_engine = RetrieverQueryEngine(retriever=retriever, response_synthesizer=response_synthesizer)
 
-    prefix_prompt = f'''O contexto, pergunta e resposta estão escrito em Português de Portugal. 
-    Usando apenas os documentos da disciplina {data.course} do ano {data.year} e restringindo a resposta ao contexto anterior.'''
-    suffix_prompt = f'Não mencionar o nome dos ficheiros na resposta.'
+    prefix_prompt = f'''O contexto, pergunta e resposta estão escritos em Português de Portugal. 
+Usando apenas os documentos da disciplina {data.course} do ano {data.year} e restringindo a resposta ao contexto anterior.'''
+    
+    suffix_prompt = 'Não deves mencionar o nome dos ficheiros na resposta.'
+
+    structure_prompt = '''Deves de seguir a seguinte estrutura:
+- <Sumário do Ponto> : <Trecho representativo>
+- <Sumário do Ponto> : <Trecho representativo>
+Não uses Markdown.
+Não adiciones mais nenhum texto para além do apresentado acima
+Identifica os trechos com o uso de aspas.
+Não te esqueças de usar o : entre o sumário e o trecho'''
     
     positive_prompt = f'''{prefix_prompt} 
-    Apresenta os pontos principais positivos (entre dois a cinco).
-    Por cada ponto inclui um trecho representativo.
-    {suffix_prompt}'''
+Apresenta entre 2 a 5 pontos positivos mais frequentemente mencionados no contexto.
+Por cada ponto inclui um trecho representativo.
+{suffix_prompt}
+{structure_prompt}'''
     
     negative_prompt = f'''{prefix_prompt} 
-    Apresenta os pontos principais negativos (entre dois a cinco).
-    Por cada ponto inclui um trecho representativo.
-    {suffix_prompt}'''
-    
+Apresenta entre 2 a 5 pontos negativos mais frequentemente mencionados no contexto.
+Por cada ponto inclui um trecho representativo.
+{suffix_prompt}
+{structure_prompt}'''
+
     sentiment_prompt = f'''{prefix_prompt}
-    Determine o sentimento de cada documento do contexto como positivo, neutro e negativo.
-    Sabendo que existem {len(data.observations)}, o total de sentimentos deve igualar {len(data.observations)}.
-    A reposta deve contar apenas a quantificação dos sentimentos, estruturados no seguinte formato:
-    Negativo: <valor>
-    Neutro: <valor>
-    Positivo: <valor>
-    {suffix_prompt}'''
+Conte quantos documentos têm um sentimento positivo, neutro ou negativo.
+Sabendo que existem {len(data.observations)}, a soma das contagens deve igualar {len(data.observations)}.
+A reposta deve apresentar apenas a contagem de documentos que se insere em cada um dos sentimentos, estruturada no seguinte formato:
+Negativo:<contagem>
+Neutro:<contagem>
+Positivo:<contagem>
+Não adiciones mais nenhum texto para além do apresentado acima'''
 
     # Prepare the response
-    logger.info(f'Prepare the response')
+    logger.info('Prepare the response')
     positive_response = query_engine.query(positive_prompt)
     negative_response = query_engine.query(negative_prompt)
     sentiment_response = query_engine.query(sentiment_prompt)
+
+    logger.debug(f'{positive_response}')
+    logger.debug(f'{negative_response}')
+    logger.debug(f'{sentiment_response}')
 
     sentiment = {}
     total = 0.0
@@ -130,15 +145,13 @@ async def report(data: Data):
     for k in sentiment:
         sentiment[k] /= total
 
-    logger.debug(f'{positive_response}')
-    logger.debug(f'{negative_response}')
-    logger.debug(f'{sentiment}')
+    
 
     # Remove temp folders
-    logger.info(f'Remove temp folders')
+    logger.info('Remove temp folders')
     shutil.rmtree(ptxt)
     
-    logger.info(f'Send the response')
+    logger.info('Send the response')
     return {'positive':positive_response.response,
     'negative': negative_response.response,
     'sentiment': sentiment}

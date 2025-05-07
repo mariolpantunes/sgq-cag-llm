@@ -7,6 +7,7 @@ import argparse
 import requests
 
 import matplotlib.pyplot as plt
+import json
 
 from markdown_pdf import MarkdownPdf,Section
 
@@ -30,8 +31,8 @@ def main(args):
 
     if response.ok:
         data = response.json()
-        logger.info(f'{data}')
-        
+        print(json.dumps(data, indent=4))  
+
     logger.info(f'Plot the sentiment analysis')
     colors = ['lightcoral', 'lightskyblue', 'lightgreen']  # One color for each bar
     categories = ['Negativo', 'Neutro', 'Positivo']
@@ -43,26 +44,26 @@ def main(args):
     plt.savefig('sentiment.png', dpi=300)
 
     logger.info(f'Generate the Report')
-    pdf = MarkdownPdf(toc_level=0, optimize=True)
-    pdf.add_section(Section(f'''
-    # Sumário Executivo - Avaliação da Disciplina de {args.c} ({args.y})\n\n
-    ## Objetivo\n
-    Este relatório resume os principais pontos positivos e negativos identificados nas 
-    respostas dos alunos à disciplina de {args.c}, com base numa análise de conteúdo textual e sentimentos.\n\n
-    ## Pontos positivos\n
-    {data['positive']}\n\n
-    ## Pontos a melhorar\n
-    {data['negative']}\n\n
-    ## Distribuição dos sentimentos
-    ![Distribuição de sentimentos](sentiment.png)
-    '''))
-    pdf.save("report.pdf")
 
+    texto_pdf = f'''## Sumário Executivo - Avaliação da Disciplina de {args.c} ({args.y})\n\n
+### Objetivo
+Este relatório resume os principais pontos positivos e negativos identificados nas 
+respostas dos alunos à disciplina de {args.c}, com base numa análise de conteúdo textual e sentimentos.
+### Pontos positivos
+{str(data['positive'])}
+### Pontos a melhorar
+{str(data['negative'])}
+### Distribuição dos sentimentos
+![Distribuição de sentimentos](sentiment.png)'''
+    pdf = MarkdownPdf(toc_level=0, optimize=True)
+    pdf.add_section(Section(texto_pdf))
+    pdf.save("report.pdf")
+    print(texto_pdf)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SGQ-CAG-LLM client')
     parser.add_argument('-i', type=str, required=True, help='input file')
-    parser.add_argument('-u', type=str, default='http://localhost:8000/report', help='service url')
+    parser.add_argument('-u', type=str, default='http://127.0.0.1:80/report', help='service url')
     parser.add_argument('-c', type=str, default='Cálculo 1', help='course')
     parser.add_argument('-y', type=int, default=2025, help='year')
     args = parser.parse_args()
