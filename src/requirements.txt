@@ -1,6 +1,0 @@
-fastapi[standard]>=0.115.12
-markdown-to-json >=2.1.2 
-ollama>=0.4.8
-llama-index-readers-file>=0.4.7
-llama-index-embeddings-ollama>=0.6.0
-llama-index-llms-ollama>=0.5.4

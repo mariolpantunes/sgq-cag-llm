@@ -1,7 +1,8 @@
 services:
   sgq-cag-llm:
     container_name: sgq-cag-llm
-    build: ./src
+    build:
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       - TZ=Europe/Lisbon
