@@ -29,13 +29,18 @@ def main(args):
     response = requests.post(args.u, timeout=None, 
     json = {'course':args.c, 'year':args.y, 'observations':observations})
 
-    if response.ok:
-        data = response.json()
-        logger.debug(json.dumps(data, indent=4))  
+    if not response.ok:
+        logger.error(f"POST /report {response.status_code}: {response.reason}")
+        quit()
+        
+    data = response.json()
+    logger.info("POST /report 200 OK")
+    logger.debug(json.dumps(data, indent=4))
 
     logger.info(f'Plot the sentiment analysis')
     colors = ['lightcoral', 'lightskyblue', 'lightgreen']  # One color for each bar
     categories = ['Negativo', 'Neutro', 'Positivo']
+    logger.info
     values = [data['sentiment'][k] for k in data['sentiment']]
     plt.bar(categories, values, color=colors)
     plt.title('Distribuição dos sentimentos')
