@@ -42,7 +42,6 @@ Settings.llm = llm
 Settings.embed_model = ollama_embedding
 Settings.transformations = [text_splitter]
 
-
 class Data(BaseModel):
     course: str
     year: int
@@ -82,11 +81,11 @@ async def report(data: Data):
     # Create the Vector Store
     logger.info('Create the Vector Store')
     documents = SimpleDirectoryReader(ptxt).load_data()
-    index = VectorStoreIndex.from_documents(documents)
+    index = VectorStoreIndex.from_documents(documents, embed_model=ollama_embedding)
     
     # Query the LLM to build the report
     logger.info('Query the LLM to build the report')
-    retriever = VectorIndexRetriever(index=index, similarity_top_k=len(data.observations))
+    retriever = VectorIndexRetriever(index=index, similarity_top_k=len(data.observations), embed_model=ollama_embedding)
     response_synthesizer = get_response_synthesizer(response_mode='compact')
     query_engine = RetrieverQueryEngine(retriever=retriever, response_synthesizer=response_synthesizer)
 
@@ -127,8 +126,11 @@ Não adiciones mais nenhum texto para além do apresentado acima'''
     # Prepare the response
     logger.info('Prepare the response')
     positive_response = query_engine.query(positive_prompt)
+    logger.info('Positive prompt: done')
     negative_response = query_engine.query(negative_prompt)
+    logger.info('Negative prompt: done')
     sentiment_response = query_engine.query(sentiment_prompt)
+    logger.info('Sentiment prompt: done')
 
     logger.debug(f'{positive_response}')
     logger.debug(f'{negative_response}')
