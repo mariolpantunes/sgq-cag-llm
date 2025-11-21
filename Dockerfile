@@ -1,6 +1,6 @@
-FROM python:3.13-slim AS builder
+FROM python:3.14-trixie AS builder
 
-WORKDIR /app   
+WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
@@ -9,7 +9,7 @@ COPY requirements.txt .
 RUN python -m venv venv && venv/bin/pip install --upgrade pip && \
         venv/bin/pip install --no-cache-dir -r requirements.txt
 
-FROM python:3.13-slim
+FROM python:3.14-trixie
 WORKDIR /app
 
 COPY --from=builder /app/venv/ /app/venv/

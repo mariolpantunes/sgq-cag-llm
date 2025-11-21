@@ -1,39 +1,40 @@
-# coding: utf-8
-
-import shutil
 import logging
-import pathlib
-import markdown_to_json
+from typing import List
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, get_response_synthesizer
+# LlamaIndex Imports
+from llama_index.core import VectorStoreIndex, Document, Settings, get_response_synthesizer
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.core.node_parser import SentenceSplitter
-from llama_index.core import Settings
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
 import ollama
+import src.const as const
 
-
+# Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
-
-llm = Ollama(base_url="https://skynet.av.it.pt/ollama/", 
-model="llama3.2:3b", 
-request_timeout=1000, 
-client=ollama.Client(host='https://skynet.av.it.pt/ollama/',
-headers={'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjNiMGU3NWIwLWE4MDctNDIxYS1hYzc2LTk4YjE2YTI3NDA2YyJ9.B66iig8M8sgCl9q0fcflld9JqOZ-gg_jJoZXeaFO3Uk'}))
+# --- Setup LlamaIndex Global Settings ---
+# Note: Keep timeouts high for local LLM inference
+llm = Ollama(
+    base_url=const.base_url,
+    model="llama3.2:3b",
+    request_timeout=1000,
+    client=ollama.Client(
+        host='https://skynet.av.it.pt/ollama/',
+        headers={'Authorization': const.token}
+    )
+)
 
 ollama_embedding = OllamaEmbedding(
-model_name="llama3.2:3b",
-request_timeout=1000,
-base_url="https://skynet.av.it.pt/ollama/",
-client_kwargs= {"headers" : {'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjNiMGU3NWIwLWE4MDctNDIxYS1hYzc2LTk4YjE2YTI3NDA2YyJ9.B66iig8M8sgCl9q0fcflld9JqOZ-gg_jJoZXeaFO3Uk'}}        
+    model_name="llama3.2:3b",
+    request_timeout=1000,
+    base_url=const.base_url,
+    client_kwargs={"headers": {'Authorization': const.token}}
 )
 
 text_splitter = SentenceSplitter(chunk_size=2048)
@@ -42,116 +43,108 @@ Settings.llm = llm
 Settings.embed_model = ollama_embedding
 Settings.transformations = [text_splitter]
 
+
 class Data(BaseModel):
     course: str
     year: int
-    observations: list
+    observations: List[str] # Added explicit type hint for contents
 
 
 app = FastAPI()
 
-
 @app.get('/')
-async def root():
-    with open('README.md') as f:
-        txt = f.read()
+def root():
+    # Changed to synchronous 'def' to prevent blocking event loop on file read
+    # Or use aiofiles if you want to keep it async
+    try:
+        with open('README.md') as f:
+            txt = f.read()
+        # Assuming markdown_to_json is simple CPU bound, it's fine here
+        import markdown_to_json
         rv = markdown_to_json.dictify(txt)
-    return rv
+        return rv
+    except FileNotFoundError:
+        return {"error": "README.md not found"}
 
 
 @app.post('/report')
 async def report(data: Data):
     logger.info(f'Generate Report for {data.course} {data.year}')
-    # Setup necessary folders
-    logger.info('Setup necessary folders')
-    ptxt = pathlib.Path('/tmp/text')
-    ptxt.mkdir(parents=True, exist_ok=True)
-    
-    # Setup the documents to index
-    logger.info('Setup the documents to index')
-    course = data.course.lower().replace(' ', '_')
-    for i in range(len(data.observations)):
-        filepath = ptxt / f'{course}_{data.year}_{i}'
-        with filepath.open('w', encoding ='utf-8') as f:
-            f.write(f'Disciplina: {data.course}\n')
-            f.write(f'Ano: {data.year}\n')
-            f.write('Observações:\n')
-            f.write(f'{data.observations[i]}')
 
-    # Create the Vector Store
-    logger.info('Create the Vector Store')
-    documents = SimpleDirectoryReader(ptxt).load_data()
-    index = VectorStoreIndex.from_documents(documents, embed_model=ollama_embedding)
-    
-    # Query the LLM to build the report
-    logger.info('Query the LLM to build the report')
-    retriever = VectorIndexRetriever(index=index, similarity_top_k=len(data.observations), embed_model=ollama_embedding)
-    response_synthesizer = get_response_synthesizer(response_mode='compact')
-    query_engine = RetrieverQueryEngine(retriever=retriever, response_synthesizer=response_synthesizer)
+    if not data.observations:
+        return {"positive": "No data", "negative": "No data"}
 
-    prefix_prompt = f'''O contexto, pergunta e resposta estão escritos em Português de Portugal. 
-Usando apenas os documentos da disciplina {data.course} do ano {data.year} e restringindo a resposta ao contexto anterior.'''
-    
-    suffix_prompt = 'Não deves mencionar o nome dos ficheiros na resposta.'
+    # 1. OPTIMIZATION: Create Documents in Memory (No disk I/O)
+    documents = []
+    for obs in data.observations:
+        # Add metadata to help the LLM distinguish context if needed
+        doc = Document(
+            text=obs,
+            metadata={
+                "course": data.course,
+                "year": data.year
+            }
+        )
+        documents.append(doc)
 
-    structure_prompt = '''Deves de seguir a seguinte estrutura:
-- <Sumário do Ponto> : <Trecho representativo>
-- <Sumário do Ponto> : <Trecho representativo>
-Não uses Markdown.
-Não adiciones mais nenhum texto para além do apresentado acima
-Identifica os trechos com o uso de aspas.
-Não te esqueças de usar o : entre o sumário e o trecho'''
-    
-    positive_prompt = f'''{prefix_prompt} 
-Apresenta entre 2 a 5 pontos positivos mais frequentemente mencionados no contexto.
-Por cada ponto inclui um trecho representativo.
-{suffix_prompt}
-{structure_prompt}'''
-    
-    negative_prompt = f'''{prefix_prompt} 
-Apresenta entre 2 a 5 pontos negativos mais frequentemente mencionados no contexto.
-Por cada ponto inclui um trecho representativo.
-{suffix_prompt}
-{structure_prompt}'''
+    try:
+        # 2. Create Vector Store (In-Memory)
+        logger.info('Create the Vector Store')
+        index = VectorStoreIndex.from_documents(documents)
 
-    sentiment_prompt = f'''{prefix_prompt}
-Conte quantos documentos têm um sentimento positivo, neutro ou negativo.
-Sabendo que existem {len(data.observations)}, a soma das contagens deve igualar {len(data.observations)}.
-A reposta deve apresentar apenas a contagem de documentos que se insere em cada um dos sentimentos, estruturada no seguinte formato:
-Negativo:<contagem>
-Neutro:<contagem>
-Positivo:<contagem>
-Não adiciones mais nenhum texto para além do apresentado acima'''
+        # 3. Retrieve
+        # LIMITATION FIX: Don't retrieve len(observations) if it's huge.
+        # Cap it at a reasonable number (e.g., 50) or use a SummaryIndex instead of VectorIndex
+        # if you essentially want to summarize *everything*.
+        top_k = min(len(data.observations), 50)
 
-    # Prepare the response
-    logger.info('Prepare the response')
-    positive_response = query_engine.query(positive_prompt)
-    logger.info('Positive prompt: done')
-    negative_response = query_engine.query(negative_prompt)
-    logger.info('Negative prompt: done')
-    sentiment_response = query_engine.query(sentiment_prompt)
-    logger.info('Sentiment prompt: done')
+        retriever = VectorIndexRetriever(
+            index=index,
+            similarity_top_k=top_k
+        )
 
-    logger.debug(f'{positive_response}')
-    logger.debug(f'{negative_response}')
-    logger.debug(f'{sentiment_response}')
+        response_synthesizer = get_response_synthesizer(response_mode='compact')
+        query_engine = RetrieverQueryEngine(
+            retriever=retriever,
+            response_synthesizer=response_synthesizer
+        )
 
-    sentiment = {}
-    total = 0.0
-    for line in sentiment_response.response.splitlines():
-        values = line.split(':')
-        n = float(values[1])
-        total += n
-        sentiment[values[0]] = n
+        # Prompts (Kept mostly same, formatted for readability)
+        prefix_prompt = (
+            f"O contexto, pergunta e resposta estão escritos em Português de Portugal.\n"
+            f"Usando apenas os documentos da disciplina {data.course} do ano {data.year}."
+        )
 
-    for k in sentiment:
-        sentiment[k] /= total
+        structure_prompt = (
+            "Deves seguir a seguinte estrutura:\n"
+            "- <Sumário do Ponto> : \"<Trecho representativo>\"\n"
+            "Não uses Markdown. Identifica os trechos com aspas."
+        )
 
-    # Remove temp folders
-    logger.info('Remove temp folders')
-    shutil.rmtree(ptxt)
-    
-    logger.info('Send the response')
-    return {'positive':positive_response.response,
-    'negative': negative_response.response,
-    'sentiment': sentiment}
+        positive_prompt = (
+            f"{prefix_prompt}\n"
+            f"Apresenta entre 2 a 5 pontos positivos mais frequentemente mencionados.\n"
+            f"{structure_prompt}"
+        )
+
+        negative_prompt = (
+            f"{prefix_prompt}\n"
+            f"Apresenta entre 2 a 5 pontos negativos mais frequentemente mencionados.\n"
+            f"{structure_prompt}"
+        )
+
+        # 4. Query
+        logger.info('Querying LLM...')
+        positive_response = query_engine.query(positive_prompt)
+        negative_response = query_engine.query(negative_prompt)
+
+        return {
+            'positive': str(positive_response),
+            'negative': str(negative_response)
+        }
+
+    except Exception as e:
+        logger.error(f"Error processing report: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # No 'finally' needed for cleanup because we didn't use the filesystem!

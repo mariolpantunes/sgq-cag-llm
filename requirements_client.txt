@@ -1,3 +1,2 @@
-requests>=2.32.3 
+requests>=2.32.3
 markdown-pdf>=1.7
-matplotlib>=3.10.1
