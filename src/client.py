@@ -62,12 +62,13 @@ respostas dos alunos à disciplina de {args.c}, com base numa análise de conte�
 ![Distribuição de sentimentos](sentiment.png)'''
     pdf = MarkdownPdf(toc_level=0, optimize=True)
     pdf.add_section(Section(texto_pdf))
-    pdf.save("report.pdf")
+    pdf.save(args.o)
     logger.info(texto_pdf)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SGQ-CAG-LLM client')
     parser.add_argument('-i', type=str, required=True, help='input file')
+    parser.add_argument('-o', type=str, default='report.pdf', help='output file')
     parser.add_argument('-u', type=str, default='http://127.0.0.1:80/report', help='service url')
     parser.add_argument('-c', type=str, default='Cálculo 1', help='course')
     parser.add_argument('-y', type=int, default=2025, help='year')
